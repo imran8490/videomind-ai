@@ -32,6 +32,7 @@ Backend API (Node.js / Express)
 │
 └──► Client-side Export (Markdown / PDF)
 
+
 ---
 
 ## 2. Architecture
@@ -268,7 +269,7 @@ GPT-5.6 Summary Generation
 ## 7. Error Handling
 
 | Scenario | Handling |
-|---|---|
+
 | Invalid file type | HTTP 400 with supported formats message |
 | Missing transcript/question on chat | HTTP 400 |
 | File not found for extraction/transcription | HTTP 404 |
@@ -313,17 +314,16 @@ Local filesystem (uploads/)
 ## 10. OpenAI Build Week Alignment
 
 ### GPT-5.6 Usage
-
 - Structured video summarization
 - Grounded conversational Q&A (hallucination-resistant)
 - Multiple-choice quiz generation from transcript content
 
 ### Codex Usage
-
 - Implemented the "Copy Transcript" feature (state, clipboard API, UI, confirmation) directly in the repository
 - Diagnosed and fixed a results-panel rendering regression
 - Implemented premium dark-mode UI styling and scroll-reveal animations
 - Verified each change with `npm run lint`, `npx tsc --noEmit`, and `npm run build` before completion
+
 
 ---
 
@@ -332,4 +332,4 @@ Local filesystem (uploads/)
 - Working web application supporting the full pipeline: Upload → FFmpeg → Whisper → GPT-5.6 Summary → GPT-5.6 Chat/Quiz → Export
 - Responsive, animated dark/light-mode UI
 - Public GitHub repository with README, PRD, and this Technical Specification
-- Demo video (<3.4 minutes) showing the complete workflow
+- Demo video (<3 minutes) showing the complete workflow
