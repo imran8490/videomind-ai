@@ -40,7 +40,7 @@ Instead of rewatching long videos to find one piece of information, users get in
 ---
 
 ## Architecture
-
+```test
 Video Upload
 │
 ▼
@@ -54,7 +54,7 @@ GPT-5.6 Summarization ──► GPT-5.6 Chat (grounded Q&A)
 │ │
 ▼ ▼
 Export (MD/PDF) GPT-5.6 Quiz Generation
-
+```
 ---
 
 ## Getting Started
@@ -139,7 +139,7 @@ Codex (via the Codex CLI, authenticated with ChatGPT) was used directly inside t
 ---
 
 ## Project Structure
-
+```test
 videomind-ai/
 ├── app/
 │ ├── page.tsx # Main frontend UI
@@ -152,7 +152,7 @@ videomind-ai/
 │ ├── services/ # Whisper, GPT-5.6, FFmpeg logic
 │ └── middleware/ # Upload validation (Multer)
 └── README.md
-
+```
 ---
 
 ## Built With
