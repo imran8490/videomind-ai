@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { uploadVideo } from "../middleware/upload.ts";
+import { uploadVideo } from "../middleware/upload";
 import {
   uploadVideoController,
-} from "../controllers/uploadController.ts";
+} from "../controllers/uploadController";
 
 const router = Router();
 

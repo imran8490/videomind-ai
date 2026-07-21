@@ -48,7 +48,7 @@ const fileFilter = (
 console.log("Original:", file.originalname);
 console.log("Extension:", ext);
 console.log("Mime Type:", file.mimetype);
-  if (validExt || validMime) {
+  if (validExt && validMime) {
     return cb(null, true);
   }
 

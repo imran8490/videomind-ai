@@ -10,6 +10,7 @@ import youtubeRoutes from "./routes/youtube";
 import audioRoutes from "./routes/audio";
 import whisperRoutes from "./routes/whisper";
 import summaryRoutes from "./routes/summary";
+import quizRoutes from "./routes/quiz";
 import chatRoutes from "./routes/chat";
 dotenv.config();
 
@@ -45,6 +46,7 @@ app.use("/api", audioRoutes);
 app.use("/api", whisperRoutes);
 app.use("/api", summaryRoutes);
 app.use("/api", chatRoutes);
+app.use("/api", quizRoutes);
 app.get("/", (_req, res) => {
   res.json({
     success: true,

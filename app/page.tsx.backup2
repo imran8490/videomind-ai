@@ -1,0 +1,350 @@
+"use client";
+
+import { useEffect, useRef, useState, type ReactNode } from "react";
+
+type ProcessingStatus =
+  | "idle"
+  | "uploading"
+  | "transcribing"
+  | "summarizing"
+  | "done"
+  | "error";
+
+function ScrollReveal({ children, delay = 0 }: { children: ReactNode; delay?: number }) {
+  const elementRef = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const element = elementRef.current;
+    if (!element) return;
+
+    const revealIfInView = () => {
+      const { top, bottom } = element.getBoundingClientRect();
+      if (top < window.innerHeight && bottom > 0) setIsVisible(true);
+    };
+
+    revealIfInView();
+    if ("IntersectionObserver" in window) {
+      const observer = new IntersectionObserver(([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      }, { threshold: 0.01 });
+      observer.observe(element);
+      return () => observer.disconnect();
+    }
+
+    setIsVisible(true);
+  }, []);
+
+  return (
+    <div
+      ref={elementRef}
+      style={{ transitionDelay: `${delay}ms` }}
+      className={`transition-[opacity,transform] duration-700 ease-out motion-reduce:translate-y-0 motion-reduce:opacity-100 motion-reduce:transition-none ${
+        isVisible ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
+      }`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function responseData(response: Response, action: string) {
+  if (!response.ok) throw new Error(`${action} failed. Please try again.`);
+  return response.json();
+}
+
+export default function Home() {
+  const [file, setFile] = useState<File | null>(null);
+const [quiz, setQuiz] = useState<any[]>([]);
+const [selectedAnswers, setSelectedAnswers] = useState<number[]>([]);
+const [quizScore, setQuizScore] = useState<number | null>(null);
+const [loadingQuiz, setLoadingQuiz] = useState(false);
+  const [status, setStatus] = useState<ProcessingStatus>("idle");
+  const [transcript, setTranscript] = useState("");
+  const [summary, setSummary] = useState("");
+  const [question, setQuestion] = useState("");
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string }[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+  const API_URL = "http://localhost:5000";
+  const steps = ["uploading", "transcribing", "summarizing", "done"] as const;
+  const activeStep = Math.max(0, steps.indexOf(status as (typeof steps)[number]));
+  const statusLabels: Record<ProcessingStatus, string> = {
+    idle: "Process video",
+    uploading: "Uploading your video…",
+    transcribing: "Transcribing with Whisper…",
+    summarizing: "Creating your summary…",
+    done: "Process video again",
+    error: "Try processing again",
+  };
+
+  async function processVideo() {
+    if (!file) return;
+    setError("");
+    setTranscript("");
+    setSummary("");
+    setMessages([]);
+    setStatus("uploading");
+
+    try {
+      const form = new FormData();
+      form.append("video", file);
+      const uploadData = await fetch(`${API_URL}/api/upload`, { method: "POST", body: form }).then((res) => responseData(res, "Upload"));
+      const filename = uploadData.data?.filename;
+      if (!filename) throw new Error("Upload did not return a video filename.");
+
+      setStatus("transcribing");
+      await fetch(`${API_URL}/api/extract-audio`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename }),
+      }).then((res) => responseData(res, "Audio extraction"));
+
+      const wavFilename = filename.replace(/\.[^/.]+$/, ".wav");
+      const transcribeData = await fetch(`${API_URL}/api/transcribe`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: wavFilename }),
+      }).then((res) => responseData(res, "Transcription"));
+      const transcriptText = transcribeData.data?.text;
+      if (!transcriptText) throw new Error("No transcript was returned for this video.");
+      setTranscript(transcriptText);
+
+      setStatus("summarizing");
+      const summaryData = await fetch(`${API_URL}/api/summarize`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transcript: transcriptText }),
+      }).then((res) => responseData(res, "Summary"));
+      setSummary(summaryData.data?.summary || "A summary could not be generated, but your transcript is ready.");
+      setStatus("done");
+    } catch (processingError) {
+      setError(processingError instanceof Error ? processingError.message : "Something went wrong while processing your video.");
+      setStatus("error");
+    }
+  }
+
+  async function ask() {
+    const q = question.trim();
+    if (!q || !transcript || chatLoading) return;
+    setMessages((current) => [...current, { role: "user", text: q }]);
+    setQuestion("");
+    setChatLoading(true);
+    try {
+      const data = await fetch(`${API_URL}/api/chat`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transcript, question: q }),
+      }).then((res) => responseData(res, "Chat request"));
+      setMessages((current) => [...current, { role: "assistant", text: data.data?.answer || "I couldn't find an answer in the video." }]);
+    } catch (chatError) {
+      setMessages((current) => [...current, { role: "assistant", text: chatError instanceof Error ? chatError.message : "I couldn't answer that just now." }]);
+    } finally {
+      setChatLoading(false);
+    }
+  }
+const exportMarkdown = () => {
+  const markdown = `# VideoMind AI
+
+## Summary
+
+${summary}
+
+---
+
+## Transcript
+
+${transcript}
+`;
+
+  const blob = new Blob([markdown], {
+    type: "text/markdown",
+  });
+
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "videomind-summary.md";
+  a.click();
+
+  URL.revokeObjectURL(url);
+};
+
+const exportPDF = () => {
+  window.print();
+};
+
+const generateQuiz = async () => {
+  try {
+    setLoadingQuiz(true);
+
+    const res = await fetch("http://localhost:5000/api/quiz", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        transcript,
+      }),
+    });
+
+    const data = await res.json();
+
+    setQuiz(data.data.quiz);
+    setSelectedAnswers(new Array(data.data.quiz.length).fill(-1));
+    setQuizScore(null);
+  } catch (err) {
+    console.error(err);
+  } finally {
+    setLoadingQuiz(false);
+  }
+};
+
+const submitQuiz = () => {
+  let score = 0;
+
+  quiz.forEach((q, i) => {
+    if (selectedAnswers[i] === q.answer) {
+      score++;
+    }
+  });
+
+  setQuizScore(score);
+};
+
+  async function copyTranscript() {
+    try {
+      await navigator.clipboard.writeText(transcript);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setError("Your browser blocked copying. Please select the transcript and copy it manually.");
+    }
+  }
+
+  const isProcessing = ["uploading", "transcribing", "summarizing"].includes(status);
+
+  return (
+    <main className="relative min-h-screen overflow-hidden bg-[#050508] text-slate-100 selection:bg-fuchsia-400/30">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
+        <div className="ambient-orb ambient-orb-one" />
+        <div className="ambient-orb ambient-orb-two" />
+        <div className="ambient-orb ambient-orb-three" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:radial-gradient(ellipse_80%_60%_at_50%_0%,#000_40%,transparent_100%)]" />
+      </div>
+
+      <div className="relative mx-auto max-w-6xl px-5 py-8 sm:px-8 sm:py-12">
+        <nav className="mb-16 flex items-center justify-between sm:mb-24">
+          <div className="flex items-center gap-3">
+            <div className="logo-float flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-fuchsia-500 via-violet-500 to-indigo-600 text-base font-black shadow-lg shadow-fuchsia-900/50">V</div>
+            <span className="text-sm font-bold tracking-tight text-white sm:text-base">VideoMind AI</span>
+          </div>
+          <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.045] px-4 py-2 text-xs font-medium text-slate-300 shadow-lg shadow-black/10 sm:flex">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" /> GPT-5.6 &amp; Whisper
+          </div>
+        </nav>
+
+        <ScrollReveal>
+          <section className="mx-auto mb-12 max-w-4xl text-center sm:mb-16">
+            <p className="mb-6 inline-flex items-center gap-2 rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-fuchsia-200">Video intelligence, distilled</p>
+            <h1 className="text-balance bg-gradient-to-b from-white via-white to-slate-400 bg-clip-text text-5xl font-black tracking-[-0.055em] text-transparent sm:text-7xl lg:text-8xl">Turn every video into your next brilliant idea.</h1>
+            <p className="mx-auto mt-7 max-w-2xl text-pretty text-base leading-7 text-slate-400 sm:text-lg">Upload a video and leave with a clear transcript, a focused summary, and answers grounded in exactly what was said.</p>
+          </section>
+        </ScrollReveal>
+
+        <ScrollReveal delay={100}>
+          <section className="relative mb-8 rounded-[28px] border border-white/12 bg-gradient-to-b from-white/[0.09] to-white/[0.025] p-1 shadow-2xl shadow-fuchsia-950/40">
+            <div className="rounded-[25px] bg-[#0b0b12]/95 p-4 sm:p-7">
+              <label className="group flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-white/[0.025] px-5 py-12 text-center transition-all duration-300 hover:border-fuchsia-300/50 hover:bg-fuchsia-400/[0.045] hover:shadow-[inset_0_0_50px_rgba(217,70,239,0.08)] sm:py-16">
+                <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-fuchsia-500/25 to-indigo-500/25 ring-1 ring-white/15 transition duration-300 group-hover:scale-110 group-hover:ring-fuchsia-300/50">
+                  <svg className="h-7 w-7 text-fuchsia-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                </div>
+                <span className="text-base font-semibold text-slate-100">{file ? file.name : "Drop your video here"}</span>
+                <span className="mt-2 text-sm text-slate-500">or click to browse · MP4 or MOV</span>
+                <input type="file" accept="video/mp4,video/quicktime" className="hidden" onChange={(event) => { setFile(event.target.files?.[0] || null); setError(""); }} />
+              </label>
+              <button onClick={processVideo} disabled={!file || isProcessing} className="button-glow group relative mt-5 w-full overflow-hidden rounded-2xl bg-gradient-to-r from-fuchsia-600 via-violet-600 to-indigo-600 px-6 py-4 text-sm font-bold text-white transition-all duration-300 enabled:hover:scale-[1.015] enabled:hover:shadow-xl enabled:hover:shadow-fuchsia-600/30 disabled:cursor-not-allowed disabled:opacity-40">
+                <span className="relative z-10">{statusLabels[status]}</span>
+              </button>
+              {status !== "idle" && <div className="mt-5" aria-live="polite"><div className="mb-2 flex justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-500"><span>{status === "done" ? "Complete" : statusLabels[status]}</span><span>{status === "done" ? "100" : Math.min((activeStep + 1) * 25, 75)}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/8"><div className={`progress-shimmer h-full rounded-full bg-gradient-to-r from-fuchsia-500 via-violet-400 to-cyan-400 transition-all duration-700 ${status === "done" ? "w-full" : activeStep === 0 ? "w-1/4" : activeStep === 1 ? "w-1/2" : "w-3/4"}`} /></div></div>}
+              {error && <p role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</p>}
+            </div>
+          </section>
+        </ScrollReveal>
+
+        {summary && <ScrollReveal><section className="mb-6 rounded-3xl border border-emerald-300/15 bg-gradient-to-br from-emerald-400/[0.08] to-transparent p-6 shadow-xl shadow-emerald-950/10 sm:p-8"><div className="mb-4 flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-400/15 text-emerald-300">✦</span><div><p className="text-xs font-bold uppercase tracking-wider text-emerald-300/75">The essential takeaways</p><h2 className="text-xl font-bold text-white">Summary</h2></div></div><div className="whitespace-pre-wrap text-sm leading-7 text-slate-300">{summary}</div></section></ScrollReveal>}
+
+{summary && (
+  <div className="flex gap-3 mt-6 flex-wrap">
+    <button
+      onClick={exportMarkdown}
+      className="rounded-xl bg-green-600 px-4 py-2 text-white hover:bg-green-700"
+    >
+      Export as Markdown
+    </button>
+
+    <button
+      onClick={exportPDF}
+      className="rounded-xl bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+    >
+      Export as PDF
+    </button>
+
+    <button
+      onClick={generateQuiz}
+      className="rounded-xl bg-purple-600 px-4 py-2 text-white hover:bg-purple-700"
+    >
+      {loadingQuiz ? "Generating..." : "Generate Quiz"}
+    </button>
+  </div>
+)}
+
+{quiz.length > 0 && (
+  <div className="mt-10 rounded-2xl border border-zinc-700 bg-zinc-900 p-6">
+    <h2 className="text-2xl font-bold mb-6 text-white">Quiz Mode</h2>
+
+    {quiz.map((q, index) => (
+      <div key={index} className="mb-8">
+        <p className="font-semibold mb-3 text-white">
+          {index + 1}. {q.question}
+        </p>
+
+        {q.options.map((option: string, optionIndex: number) => (
+          <label key={optionIndex} className="flex gap-2 mb-2 cursor-pointer text-slate-300">
+            <input
+              type="radio"
+              name={`q-${index}`}
+              checked={selectedAnswers[index] === optionIndex}
+              onChange={() => {
+                const copy = [...selectedAnswers];
+                copy[index] = optionIndex;
+                setSelectedAnswers(copy);
+              }}
+            />
+            <span>{option}</span>
+          </label>
+        ))}
+      </div>
+    ))}
+
+    <button
+      onClick={submitQuiz}
+      className="rounded-xl bg-green-600 px-5 py-2 text-white"
+    >
+      Submit Quiz
+    </button>
+
+    {quizScore !== null && (
+      <div className="mt-6 text-xl font-bold text-green-400">
+        Score: {quizScore} / {quiz.length}
+      </div>
+    )}
+  </div>
+)}        
+
+{transcript && <ScrollReveal delay={80}><section className="mb-6 rounded-3xl border border-white/10 bg-white/[0.035] p-6 shadow-xl shadow-black/10 sm:p-8"><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Every word, searchable</p><h2 className="text-xl font-bold text-white">Full transcript</h2></div><button onClick={copyTranscript} className="rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2 text-xs font-bold text-slate-200 transition-all duration-300 hover:scale-105 hover:border-fuchsia-300/40 hover:bg-fuchsia-400/10">{copied ? "Copied!" : "Copy transcript"}</button></div><div className="max-h-72 overflow-y-auto rounded-2xl border border-white/[0.06] bg-black/15 p-4 whitespace-pre-wrap text-sm leading-7 text-slate-400">{transcript}</div></section></ScrollReveal>}
+
+        {transcript && <ScrollReveal delay={140}><section className="rounded-3xl border border-cyan-300/15 bg-gradient-to-br from-cyan-400/[0.08] to-transparent p-6 shadow-xl shadow-cyan-950/10 sm:p-8"><div className="mb-5 flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-400/15 text-cyan-200">✦</span><div><p className="text-xs font-bold uppercase tracking-wider text-cyan-200/70">Grounded in your video</p><h2 className="text-xl font-bold text-white">Ask the video</h2></div></div><div className="mb-5 max-h-80 space-y-3 overflow-y-auto pr-1">{messages.length === 0 && <p className="rounded-2xl border border-white/[0.07] bg-black/10 px-4 py-3 text-sm text-slate-500">Try “What’s the main point?” or “Summarize the middle part.”</p>}{messages.map((message, index) => <div key={`${message.role}-${index}`} className={message.role === "user" ? "flex justify-end" : "flex justify-start"}><div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === "user" ? "bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-lg shadow-fuchsia-950/30" : "border border-white/10 bg-white/[0.055] text-slate-200"}`}>{message.text}</div></div>)}{chatLoading && <div className="flex justify-start"><div className="rounded-2xl border border-white/10 bg-white/[0.055] px-4 py-3 text-sm text-slate-400"><span className="inline-flex gap-1"><i className="typing-dot" /><i className="typing-dot [animation-delay:150ms]" /><i className="typing-dot [animation-delay:300ms]" /></span></div></div>}</div><div className="flex gap-2"><input className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/15 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-300/50 focus:ring-4 focus:ring-cyan-400/10" placeholder="Ask anything about this video…" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") ask(); }} /><button onClick={ask} disabled={chatLoading || !question.trim()} className="button-glow rounded-xl bg-white px-5 text-sm font-bold text-slate-950 transition-all duration-300 enabled:hover:scale-105 enabled:hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-40">Ask</button></div></section></ScrollReveal>}
+
+        <footer className="mt-16 pb-4 text-center text-xs text-slate-600">Built with Codex for OpenAI Build Week 2026</footer>
+      </div>
+    </main>
+  );
+}
