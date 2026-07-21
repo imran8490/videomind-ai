@@ -6,6 +6,7 @@ VideoMind AI converts long-form videos into searchable, interactive knowledge by
 
 ### High-Level Pipeline
 
+```text
 User
 │
 ▼
@@ -31,7 +32,7 @@ Backend API (Node.js / Express)
 │ └── Quiz Generation
 │
 └──► Client-side Export (Markdown / PDF)
-
+```
 
 ---
 
@@ -248,6 +249,7 @@ Response:
 
 ## 6. Data Flow
 
+```text
 Upload Video
 ↓
 Backend Validation (Multer + extension/type check)
@@ -262,7 +264,7 @@ GPT-5.6 Summary Generation
 ├── GPT-5.6 Chat (grounded Q&A, repeatable)
 ├── GPT-5.6 Quiz Generation (5 MCQs, scoring client-side)
 └── Client-side Export (Markdown / PDF)
-
+```
 
 ---
 
@@ -291,6 +293,7 @@ GPT-5.6 Summary Generation
 
 ## 9. Deployment Architecture (Local Dev)
 
+```text
 User Browser
 │
 ▼
@@ -307,7 +310,7 @@ Express Backend (localhost:5000)
 │
 ▼
 Local filesystem (uploads/)
-
+```
 
 ---
 
