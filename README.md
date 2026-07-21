@@ -4,6 +4,9 @@
 
 Built for OpenAI Build Week 2026, using **Codex** and **GPT-5.6**.
 
+![Status](https://img.shields.io/badge/status-working-brightgreen)
+![Built with](https://img.shields.io/badge/built%20with-Codex-blueviolet)
+
 ---
 
 ## Overview
